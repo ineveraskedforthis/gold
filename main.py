@@ -44,11 +44,20 @@ system_info_image, tmp = load_image('system_info_image.png')
 ground_image, tmp = load_image('ground.png')
 castle_image, castle_rect = load_image('castle.png')
 house_image, house_rect = load_image('house.png')
+barracks_image, barracks_rect = load_image('barracks.png')
+market_image, market_rect = load_image('market.png')
+ratspawner_image, ratspawner_rect = load_image('rat_spawner.png')
 
 BASE_TEXT_COLOR = (210, 210, 210)
 GROUND_LEVEL = 390
 BASE_DIST_BETWEEN_BUILDINGS = 45
-
+HOUSE_COST = 200
+MARKET_COST = 500
+BARRACKS_COST = 500
+WARRIOR_COST = 300
+BASE_BUILDING_HP = 1000
+BASE_ACTOR_HP = 200
+BASE_RAT_HP = 100
 
 class GameManager(TreeNode):
     def __init__(self):
@@ -68,7 +77,7 @@ class GameManager(TreeNode):
                     return
             self.update_current_scene(event_queue)
             pygame.display.update()
-            pygame.time.delay(30)
+            pygame.time.delay(10)
 
     def update_current_scene(self, events):
         if self.get_len() != 0:
@@ -130,12 +139,22 @@ class Game(InterfaceBlock):
         self.actors.add(TaxCollector(self, 20))
         self.build_queue = Queue()
         self.build('house')
-
+        self.buildings.add(RatSpawner(self, 500))
+        self.destroyed_buildings = set()
+        self.dead_actors = set()
 
     def update(self):
         InterfaceBlock.update(self)
         if not self.paused:
             self.tick += 1
+
+            for i in self.dead_actors:
+                self.actors.discard(i)
+            for i in self.destroyed_buildings:
+                self.buildings.discard(i)
+            self.destroyed_buildings = set()
+            self.dead_actors = set()
+
             for i in self.buildings:
                 i.update()
             for i in self.actors:
@@ -151,7 +170,7 @@ class Game(InterfaceBlock):
         screen.blit(self.background_image, self.rect)
         (x, y) = self.camera
         for i in self.buildings:
-            if x + 500 >= i.x >= x:
+            if x + 500 >= i.x >= x - 60:
                 screen.blit(i.get_image(), i.get_rect(self.camera))
         for i in self.actors:
             if x + 500 >= i.x >= x:
@@ -173,11 +192,13 @@ class Game(InterfaceBlock):
                         choose_flag = False
                 if choose_flag:
                     for i in self.actors:
-                        if x + 500 >= i.x >= x:
+                        if x + 500 >= i.x >= x - 3:
                             if pygame.Rect(i.get_rect(self.camera)).colliderect((x2, y2, 1, 1)):
                                 self.infobar.show_info(i, 'Actor')
+                                choose_flag = False
+                if choose_flag:
                     for i in self.buildings:
-                        if x + 500 >= i.x >= x:
+                        if x + 500 >= i.x >= x - 60:
                             if pygame.Rect(i.get_rect(self.camera)).colliderect((x2, y2, 1, 1)):
                                 self.infobar.show_info(i, 'Building')
             if event.type == KEYUP:
@@ -194,17 +215,46 @@ class Game(InterfaceBlock):
         self.buildings.add(building)
         self.next_building_x += BASE_DIST_BETWEEN_BUILDINGS
 
+    def del_building(self, building):
+        self.destroyed_buildings.add(building)
+
+    def del_actor(self, actor):
+        self.dead_actors.add(actor)
+
     def build(self, building):
         if building == 'house':
-            if self.castle.cash >= 200:
+            if self.castle.cash >= HOUSE_COST:
                 self.add_buiding(House(self, self.next_building_x))
-                self.castle.cash -= 200
+                self.castle.cash -= HOUSE_COST
+        if building == 'market':
+            if self.castle.cash >= MARKET_COST:
+                self.add_buiding(Market(self, self.next_building_x))
+                self.castle.cash -= MARKET_COST
+        if building == 'barracks':
+            if self.castle.cash >= BARRACKS_COST:
+                self.add_buiding(Barracks(self, self.next_building_x))
+                self.castle.cash -= BARRACKS_COST
 
     def get_untaxed_building(self):
         curr = None
         for i in self.buildings:
             if i.tax_status == 'Can be taxed' and (curr == None or (curr != None and i.cash > curr.cash)):
                 curr = i
+        return curr
+
+    def get_unrepaired_buildings(self):
+        for i in self.buildings:
+            if i.tax_status == 'Need repairing':
+                return i
+
+    def find_closest_enemy(self, agent):
+        curr = None
+        curr_dist = 9999
+        for i in self.actors:
+            tmp = agent.dist(i)
+            if tmp <= agent.get('agr_range') and tmp <= curr_dist and agent.side != i.side:
+                curr = i
+                curr_dist = tmp
         return curr
 
 class TopInfoBar(InterfaceBlock):
@@ -226,12 +276,19 @@ class InfoBar(InterfaceBlock):
         self.obj = obj
         self.shift = 0
         self.add_node(Label(obj.name, (10, 410)))
-        if type == 'Building':
+        if type == 'Building' or obj.name == 'taxcollector':
             self.add_node(UpdatingLabel(lambda: 'Cash: ' + str(obj.cash), (10, 430)))
         if obj.name == 'Castle':
             self.add_node(Label('Build:', (150, 410)))
-            self.add_node(Label('House', (160, 430)))
-            self.add_node(ChooseButton((220, 430, 20, 20), lambda: self.parent.build('house')))
+            self.add_node(Label('House(' + str(HOUSE_COST) + ')', (160, 430)))
+            self.add_node(ChooseButton((270, 430, 20, 20), lambda: self.parent.build('house')))
+            self.add_node(Label('Market(' + str(MARKET_COST) + ')', (160, 450)))
+            self.add_node(ChooseButton((270, 450, 20, 20), lambda: self.parent.build('market')))
+            self.add_node(Label('Barracks(' + str(BARRACKS_COST) + ')', (160, 470)))
+            self.add_node(ChooseButton((270, 470, 20, 20), lambda: self.parent.build('barracks')))
+        if obj.name == 'Barracks':
+            self.add_node(Label('Hire warrior(' + str(WARRIOR_COST) + ')', (150, 410)))
+            self.add_node(ChooseButton((300, 410, 20, 20), lambda: obj.hire()))
 
     def update(self):
         InterfaceBlock.update(self)
@@ -292,6 +349,7 @@ class GameObject():
     def __init__(self, game, name = None):
         self.game = game
         self.name = name
+        self.dead = False
         self.attributes = dict()
 
     def get(self, tag):
@@ -305,6 +363,12 @@ class GameObject():
         target.cash += amount
         self.cash -= amount
 
+    def take_damage(self, amount):
+        tmp = self.hp - amount
+        if tmp <= 0:
+            tmp = 0
+            self.dead = True
+        self.hp = tmp
 
 class GameObjectWithImage(GameObject):
     def __init__(self, game, x, image, image_rect, name = None):
@@ -404,17 +468,36 @@ class AnimatedGameObject(GameObjectWithImage):
 
 
 class Building(GameObjectWithImage):
-    def __init__(self, game, x, image, image_rect, name, income):
+    def __init__(self, game, x, image, image_rect, name, income, side = 0):
         GameObjectWithImage.__init__(self, game, x, image, image_rect, name)
         self.cash = 0
         self.income = income
+        self.max_hp = BASE_BUILDING_HP
+        self.hp = self.max_hp
         self.tax_status = 'None'
+        self.repair_status = 'None'
+        self.side = side
 
     def update(self):
-        if self.game.tick % 300 == 0:
+        if self.game.tick % 600 == 0:
             self.cash += self.income
-            if self.name != 'Castle':
-                self.tax_status = 'Can be taxed'
+        if self.name != 'Castle' and self.cash > 0 and self.tax_status == 'None':
+            self.tax_status = 'Can be taxed'
+        if self.hp < self.max_hp:
+            self.repair_status = 'Need repairing'
+        else:
+            self.repair_status = 'None'
+        if self.dead:
+            self.game.del_building(self)
+            if self.tax_status == 'In process':
+                self.tax_collector.target = None
+
+    def increase_hp(self, amount):
+        tmp = self.hp + amount
+        if tmp >= self.max_hp:
+            tmp = self.max_hp
+        self.hp = tmp
+
 
 class Castle(Building):
     def __init__(self, game, x):
@@ -425,16 +508,50 @@ class House(Building):
     def __init__(self, game, x):
         Building.__init__(self, game, x, house_image, house_rect, 'House', 10)
 
+class Barracks(Building):
+    def __init__(self, game, x):
+        Building.__init__(self, game, x, barracks_image, barracks_rect, 'Barracks', 0)
+
+    def hire(self):
+        if self.game.castle.cash >= WARRIOR_COST:
+            self.game.castle.cash -= WARRIOR_COST
+            self.game.actors.add(Warrior(self.game, self.x))
+
+class Market(Building):
+    def __init__(self, game, x):
+        Building.__init__(self, game, x, market_image, market_rect, 'Market', 100)
+
+class RatSpawner(Building):
+    def __init__(self, game, x):
+        Building.__init__(self, game, x, ratspawner_image, ratspawner_rect, 'Rat spawner', 0, side = 1)
+        self.spawn_tick = 0
+
+    def update(self):
+        self.spawn_tick += 1
+        if self.spawn_tick == 1000:
+            self.game.actors.add(Rat(self.game, self.x + 20))
+            self.spawn_tick = 0
+
 class Actor(AnimatedGameObject):
     def __init__(self, game, x, image_prefix, side = 0):
         AnimatedGameObject.__init__(self, game, x, image_prefix, side)
-        self.speed = 1
+        self.speed = 5
         self.sm = StateMachine(self, ActorIdle)
         self.state = 'idle'
+        self.max_hp = BASE_ACTOR_HP
+        self.hp = self.max_hp
+        self.attributes['attack_range'] = 1
+        self.attributes['attack_damage'] = 2
+        self.attributes['agr_range'] = 100
 
     def update(self):
+        if self.dead:
+            self.game.del_actor(self)
         AnimatedGameObject.update(self)
         self.sm.update()
+
+    def attack(self, target):
+        target.take_damage(self.attributes['attack_damage'])
 
 class AIActor(Actor):
     def update(self):
@@ -454,6 +571,32 @@ class TaxCollector(AIActor):
         self.AI = StateMachine(self, TaxCollectorIdle)
         self.target = None
         self.cash = 0
+
+    def update(self):
+        AIActor.update(self)
+        if self.dead and self.target != None:
+            self.target.tax_status = 'None'
+
+class Rat(AIActor):
+    def __init__(self, game, x):
+        AIActor.__init__(self, game, x, 'rat', side = 1)
+        self.max_hp = BASE_RAT_HP
+        self.hp = self.max_hp
+        self.AI = StateMachine(self, EnemyPatrol)
+        self.patrol_point = self.x
+        self.patrol_dist = 40
+
+class Warrior(AIActor):
+    def __init__(self, game, x):
+        AIActor.__init__(self, game, x, 'warrior')
+        self.AI = StateMachine(self, WarriorPatrol)
+        self.patrol_point = self.game.next_building_x + 40
+        self.patrol_dist = 40
+        self.cash = 150
+
+    def update(self):
+        AIActor.update(self)
+        self.patrol_point = self.game.next_building_x + 40
 
 
 Manager = GameManager()
