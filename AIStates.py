@@ -1,3 +1,4 @@
+from current_settings import *
 from StateTemplates import *
 from random import randint
 
@@ -117,6 +118,12 @@ class EnemyAttackClosestEnemy(State):
 
 class WarriorPatrol(State):
     def Execute(agent):
+        if agent.max_hp - agent.hp >= 100 and agent.healing_potions > 0:
+            agent.use_healing_potion()
+        tmp = agent.game.get_closest_market(agent)
+        if agent.cash >= HEALING_POTION_COST and agent.healing_potions < 3 and tmp != None:
+            agent.AI.change_state(WarriorBuyHealingPotion)
+            return
         tmp = agent.game.find_closest_enemy(agent)
         if tmp != None:
             agent.AI.change_state(WarriorAttackClosestEnemy)
@@ -129,12 +136,25 @@ class WarriorPatrol(State):
 
 class WarriorAttackClosestEnemy(State):
     def Execute(agent):
+        if agent.max_hp - agent.hp >= 100 and agent.healing_potions > 0:
+            agent.use_healing_potion()
         tmp = agent.game.find_closest_enemy(agent)
         if tmp == None:
             agent.AI.change_state(WarriorPatrol)
         elif agent.dist(tmp) <= agent.get('attack_range'):
             agent.sm.change_state(ActorIdle)
             agent.attack(tmp)
+        elif agent.x > tmp.x and (agent.state == 'move_right' or agent.state == 'idle'):
+            agent.sm.change_state(ActorGoLeft)
+        elif agent.x < tmp.x and (agent.state == 'move_left' or agent.state == 'idle'):
+            agent.sm.change_state(ActorGoRight)
+
+class WarriorBuyHealingPotion(State):
+    def Execute(agent):
+        tmp = agent.game.get_closest_market(agent)
+        if agent.dist(tmp) == 0:
+            agent.buy(tmp, 'healing_potion')
+            agent.AI.change_state(WarriorPatrol)
         elif agent.x > tmp.x and (agent.state == 'move_right' or agent.state == 'idle'):
             agent.sm.change_state(ActorGoLeft)
         elif agent.x < tmp.x and (agent.state == 'move_left' or agent.state == 'idle'):

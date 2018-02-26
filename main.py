@@ -4,6 +4,7 @@ import pygame
 import random
 import tkinter as tk
 import copy
+from current_settings import *
 from math import sqrt
 from GameClasses import *
 from StateTemplates import *
@@ -48,16 +49,6 @@ barracks_image, barracks_rect = load_image('barracks.png')
 market_image, market_rect = load_image('market.png')
 ratspawner_image, ratspawner_rect = load_image('rat_spawner.png')
 
-BASE_TEXT_COLOR = (210, 210, 210)
-GROUND_LEVEL = 390
-BASE_DIST_BETWEEN_BUILDINGS = 45
-HOUSE_COST = 200
-MARKET_COST = 500
-BARRACKS_COST = 500
-WARRIOR_COST = 300
-BASE_BUILDING_HP = 1000
-BASE_ACTOR_HP = 200
-BASE_RAT_HP = 100
 
 class GameManager(TreeNode):
     def __init__(self):
@@ -132,6 +123,7 @@ class Game(InterfaceBlock):
         self.add_node(self.infobar)
         self.next_building_x = 0
         self.castle = Castle(self, self.next_building_x)
+        self.castle.cash = 9000 #for testing purpose
         self.add_buiding(self.castle)
         self.actors.add(Peasant(self, 0))
         self.actors.add(TaxCollector(self, 10))
@@ -257,6 +249,16 @@ class Game(InterfaceBlock):
                 curr_dist = tmp
         return curr
 
+    def get_closest_market(self, agent):
+        curr = None
+        curr_dist = 9999
+        for i in self.buildings:
+            tmp = agent.dist(i)
+            if tmp <= curr_dist and i.name == 'Market':
+                curr = i
+                curr_dist = tmp
+        return curr
+
 class TopInfoBar(InterfaceBlock):
     def __init__(self):
         InterfaceBlock.__init__(self, info_bar_rect, info_bar_image)
@@ -276,8 +278,7 @@ class InfoBar(InterfaceBlock):
         self.obj = obj
         self.shift = 0
         self.add_node(Label(obj.name, (10, 410)))
-        if type == 'Building' or obj.name == 'taxcollector':
-            self.add_node(UpdatingLabel(lambda: 'Cash: ' + str(obj.cash), (10, 430)))
+        self.add_node(UpdatingLabel(lambda: 'Cash: ' + str(obj.cash), (10, 430)))
         if obj.name == 'Castle':
             self.add_node(Label('Build:', (150, 410)))
             self.add_node(Label('House(' + str(HOUSE_COST) + ')', (160, 430)))
@@ -368,6 +369,12 @@ class GameObject():
         if tmp <= 0:
             tmp = 0
             self.dead = True
+        self.hp = tmp
+
+    def increase_hp(self, amount):
+        tmp = self.hp + amount
+        if tmp >= self.max_hp:
+            tmp = self.max_hp
         self.hp = tmp
 
 class GameObjectWithImage(GameObject):
@@ -492,13 +499,6 @@ class Building(GameObjectWithImage):
             if self.tax_status == 'In process':
                 self.tax_collector.target = None
 
-    def increase_hp(self, amount):
-        tmp = self.hp + amount
-        if tmp >= self.max_hp:
-            tmp = self.max_hp
-        self.hp = tmp
-
-
 class Castle(Building):
     def __init__(self, game, x):
         Building.__init__(self, game, x, castle_image, castle_rect, 'Castle', 100)
@@ -540,9 +540,11 @@ class Actor(AnimatedGameObject):
         self.state = 'idle'
         self.max_hp = BASE_ACTOR_HP
         self.hp = self.max_hp
+        self.cash = 0
         self.attributes['attack_range'] = 1
         self.attributes['attack_damage'] = 2
         self.attributes['agr_range'] = 100
+        self.healing_potions = 0
 
     def update(self):
         if self.dead:
@@ -552,6 +554,11 @@ class Actor(AnimatedGameObject):
 
     def attack(self, target):
         target.take_damage(self.attributes['attack_damage'])
+
+    def buy(self, market, purchase):
+        if purchase == 'healing_potion' and self.cash >= HEALING_POTION_COST:
+            self.transfer_cash(market, HEALING_POTION_COST)
+            self.healing_potions += 1
 
 class AIActor(Actor):
     def update(self):
@@ -570,7 +577,6 @@ class TaxCollector(AIActor):
         AIActor.__init__(self, game, x, 'taxcollector')
         self.AI = StateMachine(self, TaxCollectorIdle)
         self.target = None
-        self.cash = 0
 
     def update(self):
         AIActor.update(self)
@@ -593,10 +599,17 @@ class Warrior(AIActor):
         self.patrol_point = self.game.next_building_x + 40
         self.patrol_dist = 40
         self.cash = 150
+        self.healing_potions = 2
 
     def update(self):
         AIActor.update(self)
         self.patrol_point = self.game.next_building_x + 40
+
+    def use_healing_potion(self):
+        if self.healing_potions > 0:
+            self.increase_hp(BASE_HEALING_POTION_HEAL)
+            self.healing_potions -= 1
+
 
 
 Manager = GameManager()
