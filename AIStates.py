@@ -136,8 +136,10 @@ class WarriorPatrol(State):
 
 class WarriorAttackClosestEnemy(State):
     def Execute(agent):
-        if agent.max_hp - agent.hp >= 100 and agent.healing_potions > 0:
+        if agent.hp < 50 and agent.healing_potions > 0:
             agent.use_healing_potion()
+        if agent.hp < 50:
+            agent.AI.change_state(WarriorRunAway)
         tmp = agent.game.find_closest_enemy(agent)
         if tmp == None:
             agent.AI.change_state(WarriorPatrol)
@@ -159,3 +161,20 @@ class WarriorBuyHealingPotion(State):
             agent.sm.change_state(ActorGoLeft)
         elif agent.x < tmp.x and (agent.state == 'move_left' or agent.state == 'idle'):
             agent.sm.change_state(ActorGoRight)
+
+class WarriorRunAway(State):
+    def Execute(agent):
+        tmp = agent.home
+        if agent.dist(tmp) == 0:
+            agent.enter(tmp)
+            agent.AI.change_state(WarrriorRest)
+        elif agent.x > tmp.x and (agent.state == 'move_right' or agent.state == 'idle'):
+            agent.sm.change_state(ActorGoLeft)
+        elif agent.x < tmp.x and (agent.state == 'move_left' or agent.state == 'idle'):
+            agent.sm.change_state(ActorGoRight)
+
+class WarrriorRest(State):
+    def Execute(agent):
+        if agent.hp == agent.max_hp:
+            agent.exit(agent.building)
+            agent.AI.change_state(WarriorPatrol)

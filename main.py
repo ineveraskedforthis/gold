@@ -165,7 +165,7 @@ class Game(InterfaceBlock):
             if x + 500 >= i.x >= x - 60:
                 screen.blit(i.get_image(), i.get_rect(self.camera))
         for i in self.actors:
-            if x + 500 >= i.x >= x:
+            if x + 500 >= i.x >= x and not i.in_building:
                 screen.blit(i.get_image(), i.get_rect(self.camera))
         screen.blit(ground_image, (0, GROUND_LEVEL - y))
         for i in self.childs:
@@ -514,8 +514,10 @@ class Barracks(Building):
 
     def hire(self):
         if self.game.castle.cash >= WARRIOR_COST:
+            tmp = Warrior(self.game, self.x)
+            tmp.home = self
             self.game.castle.cash -= WARRIOR_COST
-            self.game.actors.add(Warrior(self.game, self.x))
+            self.game.actors.add(tmp)
 
 class Market(Building):
     def __init__(self, game, x):
@@ -545,12 +547,15 @@ class Actor(AnimatedGameObject):
         self.attributes['attack_damage'] = 2
         self.attributes['agr_range'] = 100
         self.healing_potions = 0
+        self.in_building = False
 
     def update(self):
         if self.dead:
             self.game.del_actor(self)
         AnimatedGameObject.update(self)
         self.sm.update()
+        if self.in_building:
+            self.increase_hp(1)
 
     def attack(self, target):
         target.take_damage(self.attributes['attack_damage'])
@@ -559,6 +564,16 @@ class Actor(AnimatedGameObject):
         if purchase == 'healing_potion' and self.cash >= HEALING_POTION_COST:
             self.transfer_cash(market, HEALING_POTION_COST)
             self.healing_potions += 1
+
+    def enter(self, building):
+        if self.dist(building) == 0:
+            self.in_building = True
+            self.building = building
+            self.sm.change_state(ActorIdle)
+
+    def exit(self, building):
+        self.in_building = False
+        self.building = None
 
 class AIActor(Actor):
     def update(self):
@@ -598,8 +613,8 @@ class Warrior(AIActor):
         self.AI = StateMachine(self, WarriorPatrol)
         self.patrol_point = self.game.next_building_x + 40
         self.patrol_dist = 40
-        self.cash = 150
-        self.healing_potions = 2
+        self.cash = STARTING_WARRIOR_MONEY
+        self.healing_potions = STARTING_WARRIOR_NUMBER_OF_POTIONS
 
     def update(self):
         AIActor.update(self)
